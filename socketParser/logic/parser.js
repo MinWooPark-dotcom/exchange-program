@@ -98,10 +98,13 @@ const registerAuction = async (stringInfo) => {
         const seqQueue = seqQueueMap[itemId]; // seqQueue 찾아서 스케줄 시간 됬을 때 실행할 job을 push해 놓을 예정
         /** schedule.js의 scheduleJob함수 살펴보면
          * arguments(arguments 객체는 함수에 전달된 인수에 해당하는 Array 형태의 객체)에 날짜와 함수가 들어옴 **/
-        const job = schedule.scheduleJob(endOfAuctionDate, async () => {
+        /** 7/15 피드백4: 즉시 구매 시 스케줄러 삭제하기 위해서 seqQueue.job에 job을 담아둠, cancel()의 인자로 날짜를 넣기 위해 seqQueue.endOfAuctionDate에 endOfAuctionDate 담음 **/
+        // console.log('job', job) // Job {pendingInvocations: Array(1), job: Function, ... }  Job객체는 EventEmitters이고 다음 이벤트를 내보냅니다(공식 문서 확인).
+        const job = schedule.scheduleJob(endOfAuctionDate, async () => { // schedule.scheduleJob(...) 실행하면 new Job(...)을 통해 job객체를 만듦.
             // 스케줄 시간 됬을 때 실행할 job, 경매 종료시킴
             const scheduleJob = async (...args) => {
                 const [userId, itemId, auctionItemId] = args
+                /** 7/15 피드백4:**/
                 console.log('스케줄러 테스트');
                 const endAuctionItem = await model['Market'].findByPk(auctionItemId); // 'auctionItem'은 처음 만들어진 값, bidder가 등록된 것을 알기 위해선 현 시점에서 새로 find 해야 함
                 // 1.해당 아이템에 접근하여 bidder가 있는지 체크
@@ -134,19 +137,18 @@ const registerAuction = async (stringInfo) => {
             /** seqQueue에 위의 로직을 넣어서 push된 순서대로 실행 후 seqQueue제거해야 함 **/
             await seqQueue.push(await scheduleJob, userId, itemId, auctionItem.id,);
         });
-        // console.log('job', job) // Job {pendingInvocations: Array(1), job: Function, ... }  Job객체는 EventEmitters이고 다음 이벤트를 내보냅니다.
         /** 7/15 피드백4: 즉시 구매 시 스케줄러 삭제하기 위해서 seqQueue.job에 job을 담아둠, cancel()의 인자로 날짜를 넣기 위해 seqQueue.endOfAuctionDate에 endOfAuctionDate 담음 **/
-        seqQueue.job = job
-        seqQueue.endOfAuctionDate = endOfAuctionDate
-        // console.log('잡 넣은 seqQueue', seqQueue) // 확인 완료
-         /** 마켓에 등록했으면 등록 수수료 처리 **/
-            // immediateOrderStatus === true => 즉시 구매가의 0.1%
-            // immediateOrderStatus === false => 기본 값 1원
+        seqQueue.job = job // job객체를 통해서 .cancel()메서드를 사용할 수 있음.
+        seqQueue.endOfAuctionDate = endOfAuctionDate // job.cancel()메서드의 인자로 날짜를 넣어 해당 스케줄에 실행될 잡을 취소함.
         const user = await model['User'].findByPk(userId);
+        /** 마켓에 등록했으면 등록 수수료 처리 **/
+        // 등록 수수료: 즉시 구매가의 0.1%
         if (immediateOrderStatus === true) {
             /** 부동 소수점 방지를 위해 1000을 곱한 값을 더함, 이후 발란스 가져올 땐 1000을 나눠서 가져옴 **/
             await user.decrement('balance', {by: immediateOrderPrice * 0.001 * CONVERT_INTEGER_VALUE}) // 즉시 구매 가능 등록 수수료: 즉시 구매가의 0.1%, 최소 즉시 구매가가 1코인이니까 수수료 0.001코인까지 나옴
-        } else {
+        }
+        // 등록 수수료: 즉시 구매 불가는 기본 값 1원
+        else {
             await user.decrement('balance', {by: 1 * CONVERT_INTEGER_VALUE }) // 즉시 구매 불가할 때 등록 수수료: 기본 값 1코인
         }
         await redisCtrl.pushQueue('ojt:socket:internal', `${msgType}||${userId}||${itemId}`);
@@ -222,6 +224,7 @@ const immediateOrder = async (stringInfo) => {
         const auctionItem = await model['Market'].findOne({where: {itemId: itemId, status: 'ONGOING'}});
         // 예외처리: 두 번째 구매 요청은 status에 걸려 아이템이 없을테니 여기서 에러 처리 남.
         if (!auctionItem) {
+            /** 7/16 피드백10: 트랜잭션 닫기, 처음에 트랜잭션 열어두고 에러처리하면 트랜잭션 안 닫혀있음. 리턴 전에 닫아주기 **/
             return await redisCtrl.pushQueue('ojt:socket:internal', `fail||error||${userId}||UNREGISTERED_ITEM`)
         }
         const buyer = await model['User'].findByPk(userId);
@@ -246,8 +249,7 @@ const immediateOrder = async (stringInfo) => {
          * 삭제 됬는지 확인하는 법: 즉시 구매 후에 스케줄러가 도는 지(스케줄러 콜백 함수에 있는 콘솔이 찍히는 지) 확인 **/
         // console.log('캔슬 전 seqQueue', seqQueue)
         const endOfAuctionDate = seqQueue.endOfAuctionDate;
-        // seqQueue.job.cancel(endOfAuctionDate) // 인자 넣고 캔슳 확인, 안넣고는 ? , 인자 유무의 차이는?
-        seqQueue.job.cancel() // 인자 넣고 캔슳 확인, 안넣고는 ? , 인자 유무의 차이는?
+        seqQueue.job.cancel(endOfAuctionDate) // 인자 넣으면 해당 스케줄만 리스케줄링
         // console.log('캔슬 후 seqQueue', seqQueue) // 캔슬 후에도 차이가 없음 어떻게 캔슬됬는지 알지?
         seqQueue.push(destroySeqQueue, itemId)
         seqQueue.status = 0; // seqQueue 상태 닫아서 다음 push 못 받음. 그래야 이전 push된 함수들 다 실행되서 예외 처리 후 destroy하니까

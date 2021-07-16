@@ -50,7 +50,7 @@ class ItemModel extends BaseModel {
      * 아이템에 대한 정보 뭐 보내줘야 하는지 고민 **/
     async convertInfoForm() {
         return {
-            userId: this.userId,
+            itemId: this.id,
             itemName: this.itemName,
             ability: this.ability,
             status: this.status // 물건 구입 후 클라이언트에서 userMap.items에 넣을 때 상태가 'UNUSED'인지 확인하기 위함

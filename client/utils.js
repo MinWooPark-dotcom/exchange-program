@@ -8,6 +8,20 @@ const rl = readline.createInterface({
 });
 exports.rl = rl;
 
+const searchAuctionList = async (token, errorHandler) => {
+    try{
+        await axios.get('http://localhost:3000/market', {
+            headers: {
+                token: token
+            }
+        })
+    } catch (e) {
+        console.log('경매 리스트 검색에 실패했습니다.', e)
+        return errorHandler();
+    }
+}
+exports.searchAuctionList = searchAuctionList;
+
 const getRemainingAuctionTime = (auctionList) => {  // [{endOfAuctionTime: 'YYYY-MM-DD HH:MM:SS', ...}, ...] 리스트로 들어옴.
     console.log('경매 진행 중인 물품 리스트입니다. \n')
     let num = 1; // 아이템 숫자 매기는 용도
@@ -52,14 +66,13 @@ const searchAuctionItem = (token, errorHandler) => {
             });
         } catch (e) {
             console.log('물품 검색에 실패했습니다.', e)
-            errorHandler();
+            return errorHandler();
         }
     });
 }
 exports.searchAuctionItem = searchAuctionItem;
 
-/** 3.경매 물품 등록하기 **/
-const registerAuction = (recursiveAsyncReadLine, socket, token, errorHandler) => {
+const registerAuction = (recursiveAsyncReadLine, token, errorHandler) => {
     rl.question("itemId: ", async function (itemId) {
         rl.question("최초 입찰액(최소 금액 1코인, 최소 단위 1): ", async function (initialBidAmount) {
             /** 7/15 피드백5: 필수 파라미터만 체크하고 immediateOrderStatus 옵션은 체크 안 함 **/
@@ -84,7 +97,7 @@ const registerAuction = (recursiveAsyncReadLine, socket, token, errorHandler) =>
                                     break;
                                 default:
                                     console.log('1~3번 중 하나를 입력해 주세요')
-                                    return recursiveAsyncReadLine(socket, token);
+                                    return recursiveAsyncReadLine(token);
                             }
                             /** auctionTime 받은 걸 UTC(밀리세컨드)로 바꿔서 서버로 넘겨주기
                              * 시간: 1000(밀리세컨드) * 60 * 60 * auctionTime(입력 시간) = 시간을 밀리세컨드초로 변환
@@ -112,14 +125,14 @@ const registerAuction = (recursiveAsyncReadLine, socket, token, errorHandler) =>
                                     });
                                 } catch (e) {
                                     console.log('경매 등록에 실패했습니다.', e.response.data)
-                                    errorHandler();
+                                    return errorHandler();
                                 }
                             });
                         });
                         break;
                     default:
                         console.log('true 또는 false를 입력해 주세요')
-                        errorHandler();
+                        return errorHandler();
                 }
                 rl.question("즉시 구매 금액(최소 금액1코인, 최소 단위1): ", async function (immediateOrderPrice) {
                     rl.question("경매 시간 단위(1.시간 2.분 3.초 중 원하시는 단위의 번호를 입력해 주세요): ", async function (auctionTimeUnit) {
@@ -135,7 +148,7 @@ const registerAuction = (recursiveAsyncReadLine, socket, token, errorHandler) =>
                                 break;
                             default:
                                 console.log('1~3번 중 하나를 입력해 주세요')
-                                errorHandler();
+                                return errorHandler();
                         }
                         /** auctionTime 받은 걸 UTC값으로 바꿔서 서버로 넘겨주기
                          * UTC는 밀리세컨드 단위 사용
@@ -166,7 +179,7 @@ const registerAuction = (recursiveAsyncReadLine, socket, token, errorHandler) =>
                                 });
                             } catch (e) {
                                 console.log('경매 등록에 실패했습니다.', e.response)
-                                errorHandler();
+                                return errorHandler();
                             }
                         });
                     });
@@ -180,13 +193,21 @@ exports.registerAuction = registerAuction;
 /** 경매 리스트 검색 시 즉시 구매 or 입찰할 지 물어봄 **/
 /** 7/15 피드백6: 입찰-즉시 구매가 예외처리(즉시구매가보다 비싼 금액으로 입찰하면 에러)
  * 클라이언트에서 확인하는 방법은 마켓 아이디로 auctionList를 체크해서 즉시 구매가를 알아내고 유저가 입찰한 입찰액과 비교 **/
-const immediateOrderOrBid = (recursiveAsyncReadLine, auctionList, socket, token, errorHandler) => {
+const immediateOrderOrBid = (recursiveAsyncReadLine, auctionList, token, errorHandler) => {
+    /** 즉시 구매 불가 상품은 즉시 구매가 애초에 선택지에 없으면 좋은데 불가능한 이유는 경매 리스트를 본 후 그 중에서 구매를 진행하기 때문에 그 중에 즉시 구매가 가능한 것도 있고
+     * 불가능한 아이템도 섞여 있으므로 메뉴에서 미리 제외할 수 없었음. 그래서 즉시 구매 안되는 물건을 즉시 구매 요청하면 예외 처리 해야 함. **/
     rl.question('\n 1.즉시 구매하기 2.입찰하기 3.메뉴로 돌아가기', async (answer) => {
         try {
             switch (answer) {
                 case "1":
                     rl.question("즉시 구매할 marketId를 입력해 주세요: ", async function (marketId) {
                         try {
+                            /** 추가 8번: 즉시 구매 불가 상품을 즉시 구매 했을 때 예외 처리 **/
+                            const auctionItem = auctionList.filter(el => el.id === marketId)[0];
+                            if (!auctionItem.immediateOrderStatus) {
+                                console.log('에러: 즉시 구매 가능한 아이템이 아닙니다.')
+                                return errorHandler();
+                            }
                             await axios.post('http://localhost:3000/market/order/immediate', {
                                 marketId: marketId
                             }, {
@@ -196,26 +217,22 @@ const immediateOrderOrBid = (recursiveAsyncReadLine, auctionList, socket, token,
                             });
                         } catch(e) {
                             console.log('즉시 구매 실패를 실패하였습니다.',e.response.data)
-                            errorHandler();
+                            return errorHandler();
                         }
                     });
                     break;
-                /** 7/15 피드백6. 입찰-즉시구매가 예외처리(즉구보다 입찰이 비싸면 에러 처리 클라이언트에서 먼저, 서버는 API에서 처리 **/
                 case "2":
                     rl.question("입찰할 marketId: ", async function (marketId) {
-                        // 1. auctionList 중에서 입찰하려는 아이템을 찾음
                         const auctionItem = auctionList.filter(el => el.id === marketId)[0];
-                        console.log('auctionItem', auctionItem)
                         // if (!auctionItem) throw new Error('INVALID_MARKET_ID')
                         if (!auctionItem) {
                             console.log('에러: marketId를 잘못 입력하셨습니다.')
                             errorHandler();
                         }
-                        // 2. 즉시 구매가와 입찰액과 비교
+                        /** 7/15 피드백6. 입찰-즉시구매가 예외처리(즉구보다 입찰이 비싸면 에러 처리 클라이언트에서 먼저, 서버는 API에서 처리 **/
                         rl.question("입찰액: ", async function (bidAmount) {
                             try {
                                 // 즉시 구매가보다 낮은 금액으로만 입찰 가능
-                                console.log('auctionItem', auctionItem)
                                 if (auctionItem.immediateOrderPrice <= bidAmount) {
                                     console.log('에러: 입찰액이 즉시 구매가보다 크거나 같아 입찰이 진행되지 않았습니다.')
                                     return errorHandler();
@@ -242,18 +259,18 @@ const immediateOrderOrBid = (recursiveAsyncReadLine, auctionList, socket, token,
                                     console.log('에러: 입찰액이 즉시 구매가보다 크거나 같아 입찰이 진행되지 않았습니다.')
                                 }
                                 console.log('입찰 실패 시 서버로 부터 받은 에러 코드.', e.response.data);
-                                errorHandler()
+                                return errorHandler();
                             }
                         });
                     });
                     break;
                 case "3":
                     console.log('메뉴로 돌아가기를 선택하셨습니다.')
-                    return recursiveAsyncReadLine(socket, token);
+                    return recursiveAsyncReadLine(token);
                 default:
                     console.log("잘못된 번호를 입력하셨습니다. \n초기 메뉴 선택으로 돌아갑니다.");
                     // 여기서 다시 아이템 구입하기로 가야하는데 아예 메뉴 선택으로 가버림
-                    return recursiveAsyncReadLine(socket, token);
+                    return recursiveAsyncReadLine(token);
             }
         } catch (e) {
             console.log(e)

@@ -21,7 +21,7 @@ const middleware = async (socket, next) => {
 /** 웹소켓 커넥션 되면 실행, 소켓은 이벤트 기반으로 작동, 커넥션 붙으면 리턴되는 소켓 객체는 각각 하나의 클라이언트임 **/
 async function initSocket(socket) {
     try {
-        socket.join(socket.userId)
+        socket.join(socket.userId) // room에 접속
         const req = socket.request; // 요청 객체에 접근
         const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress; // XFF헤더, 클라이언트 ip를 알아내는 대표적인 방법
         console.log('새로운 클라이언트 접속, ip', ip);

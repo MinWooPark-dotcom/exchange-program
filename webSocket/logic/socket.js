@@ -8,6 +8,7 @@
  * 2. 아이템 객체 못 찾을 때
  * 3. 유저 객체 못 찾을 때
  * 4. 판매 목록 객체 못 찾을 때 **/
+const {CONVERT_INTEGER_VALUE} = require('../../common/enum');
 const model = require('../../common/models')
 // const {userSocketMap} = require('./connector') // userSocketMap 메모리는 한계가 있음 -> 웹소켓 채널 개념 공부 후 사용
 
@@ -102,16 +103,19 @@ const sendRegisteredItemData = async (action, userId, itemId) => {
         io.sockets.in(userId).emit('ojt:error', {status: 'fail', code: 'INVALID_ITEM_ID'});
     }
     const result = await registeredItem.convertInfoForm()
-    /** 7/15 피드백3: result를 [] 감싼 건 불필요한 코드임. 클라이어트에서 그냥 받을 수 있음 **/
     // 판매자 인벤토리 변경
     io.sockets.in(userId).emit('ojt:items', {data: {itemId: registeredItem.Item.id }, action: action})  // items로 주는 정보: id, ItemName, ability, status
     /** 1.경매 등록, 2.판매 완료(구매 이루어지거나 시간이 종료되거나) 둘 다 모든 유저들에게 알려줘서 업데이트를 하지만 셀러에게는 판매가 완료되었다고 알려줘야하니 seller:true로 구별 **/
+    /** 7/15 피드백3: result를 [] 감싼 건 불필요한 코드임. 클라이어트에서 그냥 받을 수 있음 **/
     io.sockets.in(userId).emit('ojt:auctionList', {data: {auctionItem: result}, action: action, seller: true}) // action: registerAuction
     /** 판매자에게 변경된 발란스 보냄**/
-    io.sockets.in(userId).emit('ojt:balance', {data: {coin: user.balance}})
+    /** 1. user.balance를 원래대로 만들기 위해 CONVERT_INTEGER_VALUE으로 나눔.
+     * 2. 나눈 값을 소수점 표기한 문자열로 반환 => x.xxx
+     * 3. parseFloat로 문자열을 실수로 반환 **/
+    io.sockets.in(userId).emit('ojt:balance', {data: {coin: parseFloat((user.balance/CONVERT_INTEGER_VALUE).toFixed(3))}})
     /** 경매 물품 리스트의 변동 사항은 모든 유저들에게 알려줘서 변경해야함 **/
     // 모든 유저에게 전송
-    io.sockets.emit('ojt:auctionList', {data: {auctionItem: [result]}, action: action})
+    io.sockets.emit('ojt:auctionList', {data: {auctionItem: [result]}, action: action});
 };
 
 /** 입찰 했을 때 **/
@@ -144,11 +148,14 @@ const sendBasicOrderData = async (action, userId, marketId) => {
     // 현재 입찰자
     else if (user.nickname === result.bidder) {
         io.sockets.in(userId).emit('ojt:order', {data: {order: result}, action: action});
-        io.sockets.in(userId).emit('ojt:balance', {data: {coin: user.balance}})
+        /** 1. user.balance를 원래대로 만들기 위해 CONVERT_INTEGER_VALUE으로 나눔.
+         * 2. 나눈 값을 소수점 표기한 문자열로 반환 => x.xxx
+         * 3. parseFloat로 문자열을 실수로 반환 **/
+        io.sockets.in(userId).emit('ojt:balance', {data: {coin: parseFloat((user.balance / CONVERT_INTEGER_VALUE).toFixed(3))}});
     }
     else {
         io.sockets.in(userId).emit('ojt:order', {data: {order: result}, action: 'noticeCancelBid'});
-        io.sockets.in(userId).emit('ojt:balance', {data: {coin: user.balance}})
+        io.sockets.in(userId).emit('ojt:balance', {data: {coin: parseFloat((user.balance / CONVERT_INTEGER_VALUE).toFixed(3))}});
     }
 }
 
@@ -178,14 +185,17 @@ const sendImmediateOrderData = async (action, userId, itemId) => {
     // 파서에서 구매자 아이디로 item.userId 업데이트 완료
     if (item.userId === userId) {
         // 구매자에게만
+
         /** 7/15 피드백3: result를 [] 감싼 건 불필요한 코드임. 클라이어트에서 그냥 받을 수 있음 **/
         io.sockets.in(userId).emit('ojt:items', {data: {item: result}, action: action});
     } else {
         io.sockets.in(userId).emit('ojt:order', {data: {item: result}, action: action});
     }
     // 구매자, 판매자 모두 변경된 발란스 정보 보냄
-    io.sockets.in(userId).emit('ojt:balance', {data: {coin: user.balance}});
-
+    /** 1. user.balance를 원래대로 만들기 위해 CONVERT_INTEGER_VALUE으로 나눔.
+     * 2. 나눈 값을 소수점 표기한 문자열로 반환 => x.xxx
+     * 3. parseFloat로 문자열을 실수로 반환 **/
+    io.sockets.in(userId).emit('ojt:balance', {data: {coin: parseFloat((user.balance / CONVERT_INTEGER_VALUE).toFixed(3))}});
 }
 
 
@@ -273,7 +283,10 @@ const sendCloseAuctionData = async (action, userId, marketId) => {
         // 판매자
         if (user.nickname === result.seller) {
             io.sockets.in(userId).emit('ojt:order', {data: {order: result}, action: 'successfulBid', seller: true});
-            io.sockets.in(userId).emit('ojt:balance', {data: {coin: user.balance}})
+            /** 1. user.balance를 원래대로 만들기 위해 CONVERT_INTEGER_VALUE으로 나눔.
+             * 2. 나눈 값을 소수점 표기한 문자열로 반환 => x.xxx
+             * 3. parseFloat로 문자열을 실수로 반환 **/
+            io.sockets.in(userId).emit('ojt:balance', {data: {coin: parseFloat((user.balance / CONVERT_INTEGER_VALUE).toFixed(3))}});
         }
         // 낙찰자
         else if (user.nickname === result.bidder) {

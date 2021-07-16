@@ -33,7 +33,7 @@ router.post('/order/basic', async (req, res, next) => {
         if (!auctionItem) throw new Error('INVALID_MARKET_ID');
         /** 1. 거래 최소 단위는 1, 정수
          * 2.기존 입찰액보다 새로운 입찰액이 커야함
-         * 3.기존 입찰액이 없으면 최초 입찰액보다 커야함**/값
+         * 3.기존 입찰액이 없으면 최초 입찰액보다 커야함**/
 
         /** 7/15 피드백6: 입찰-즉시 구매가 예외처리(즉시구매가보다 비싼 금액으로 입찰하면 에러)
          * 클라이언트에서 처리하지만 서버에서도 예외처리는 해 놓음 **/
@@ -173,7 +173,7 @@ router.get('/', async (req, res, next) => {
         }
         return await next({status: 'success'});
     } catch (e) {
-        console.log(e)
+        next(e)
     }
 });
 
