@@ -34,7 +34,7 @@ const recursiveAsyncReadLine = async function (token) {
             /** 1. 경매 물품 리스트 보기 **/
             case "1":
                 console.log('1번 \'경매 물품 리스트 보기\' 선택하셨습니다.');
-                await searchAuctionList(token, errorHandler)
+                await searchAuctionList(recursiveAsyncReadLine, token, errorHandler)
                 break;
             /** 2. 경매 물품 검색하기 **/
             case "2":

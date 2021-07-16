@@ -173,6 +173,8 @@ const basicOrder = async (stringInfo) => {
         // 1. 마켓에 등록되어 있는지 체크
         const auctionItem = await model['Market'].findOne({where: {itemId: itemId, status: 'ONGOING'}});
         if (!auctionItem) {
+            /** 7/16 피드백10: 트랜잭션 객체 close 안되있음 **/
+            await seqTransaction.rollback();
             return await redisCtrl.pushQueue('ojt:socket:internal', `fail||error||${userId}||UNREGISTERED_ITEM`)
         }
         // 2. 입찰액이 기존보다 커야함
@@ -217,14 +219,14 @@ const basicOrder = async (stringInfo) => {
 /** 7/15 피드백4: 즉시 구매 시 스케줄러 삭제 **/
 const immediateOrder = async (stringInfo) => {
     const seqTransaction = await model.sequelize.transaction(); // try 또는 catch 둘 중 한 곳에서 무조건 쓰이니까 바깥 스코프에서 만듦.
-    // const [msgType, userId, itemId, buyer, seller] = stringInfo.split('|')
     const [msgType, userId, itemId] = stringInfo.split('|')
     try {
         /** 구매-구매: 두 번째 구매 시 마켓에 물건이 없을테니 확인 후 에러 **/
         const auctionItem = await model['Market'].findOne({where: {itemId: itemId, status: 'ONGOING'}});
         // 예외처리: 두 번째 구매 요청은 status에 걸려 아이템이 없을테니 여기서 에러 처리 남.
         if (!auctionItem) {
-            /** 7/16 피드백10: 트랜잭션 닫기, 처음에 트랜잭션 열어두고 에러처리하면 트랜잭션 안 닫혀있음. 리턴 전에 닫아주기 **/
+            /** 7/16 피드백10: 트랜잭션 객체 close 안되있음 **/
+            await seqTransaction.rollback();
             return await redisCtrl.pushQueue('ojt:socket:internal', `fail||error||${userId}||UNREGISTERED_ITEM`)
         }
         const buyer = await model['User'].findByPk(userId);

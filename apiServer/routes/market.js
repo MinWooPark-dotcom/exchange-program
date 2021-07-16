@@ -148,30 +148,84 @@ router.post('/auction', async (req, res, next) => {
     }
 });
 
+/** 개인 정보가 아닌 경매 리스트는 API로 대체  **/
 /** 경매 물품 리스트, 경매 물품 검색 **/
 // GET Auction list
+// router.get('/', async (req, res, next) => {
+//     try {
+//         const {itemName} = req.query;
+//         const userId = req.user.id;
+//         /** GET market?itemName=itemName (경매 리스트 중 아이템 검색) **/
+//         if (itemName) {
+//             /** itemName 유효성 검사 **/
+//             const fullItemName = await model['Item'].getFullItemName(itemName); // 일치하는 문자가 없으면 -1
+//             // 검색한 아이템 이름 풀네임 구함
+//             if (fullItemName !== -1) {
+//                 await redisCtrl.pushQueue('ojt:socket:parser', `searchAuctionList||${userId}||${fullItemName}`);
+//             }
+//             // 검색한 아이템 이름 풀네임 없음
+//             else if (fullItemName === -1) {
+//                 await redisCtrl.pushQueue('ojt:socket:parser', `searchAuctionList||${userId}||undefined`);
+//             }
+//         }
+//         /** GET market (경매 리스트 검색) **/
+//         else {
+//             await redisCtrl.pushQueue('ojt:socket:parser', `searchAuctionList||${userId}`);
+//         }
+//         return await next({status: 'success'});
+//     } catch (e) {
+//         next(e)
+//     }
+// });
+
+/** GET market?itemName=itemName (경매 리스트 중 아이템 검색) **/
 router.get('/', async (req, res, next) => {
     try {
         const {itemName} = req.query;
         const userId = req.user.id;
-        /** GET market?itemName=itemName (경매 리스트 중 아이템 검색) **/
+        let auctionList;
         if (itemName) {
-            /** itemName 유효성 검사 **/
-            const fullItemName = await model['Item'].getFullItemName(itemName); // 일치하는 문자가 없으면 -1
-            // 검색한 아이템 이름 풀네임 구함
-            if (fullItemName !== -1) {
-                await redisCtrl.pushQueue('ojt:socket:parser', `searchAuctionList||${userId}||${fullItemName}`);
-            }
-            // 검색한 아이템 이름 풀네임 없음
-            else if (fullItemName === -1) {
-                await redisCtrl.pushQueue('ojt:socket:parser', `searchAuctionList||${userId}||undefined`);
-            }
+            auctionList = await model['Market'].findAll({
+                include: [
+                    {
+                        model: model['Item'],
+                        attributes: ['id', 'itemName', 'ability', 'status'],
+                        where: {
+                            itemName: itemName
+                        }
+                    },
+                    {
+                        model: model['User'],
+                        attributes: ["nickname"],
+                    },
+                ],
+                where: {
+                    status: 'ONGOING'
+                },
+            });
+        } else {
+            /** 경매 리스트 모두 검색 **/
+            auctionList = await model['Market'].findAll({
+                include: [
+                    {
+                        model: model['Item'],
+                        attributes: ['id', 'itemName', 'ability', 'status'],
+                    },
+                    {
+                        model: model['User'],
+                        attributes: ["nickname"],
+                    },
+                ],
+                where: {
+                    status: 'ONGOING'
+                },
+            });
         }
-        /** GET market (경매 리스트 검색) **/
-        else {
-            await redisCtrl.pushQueue('ojt:socket:parser', `searchAuctionList||${userId}`);
+        const convertFormAuctionList = [];
+        for(const auctionItem of auctionList) {
+            convertFormAuctionList.push(await auctionItem.convertInfoForm());
         }
-        return await next({status: 'success'});
+        return await next({status: 'success', auctionList: convertFormAuctionList});
     } catch (e) {
         next(e)
     }

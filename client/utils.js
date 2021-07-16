@@ -8,13 +8,23 @@ const rl = readline.createInterface({
 });
 exports.rl = rl;
 
-const searchAuctionList = async (token, errorHandler) => {
+const searchAuctionList = async (recursiveAsyncReadLine, token, errorHandler) => {
     try{
-        await axios.get('http://localhost:3000/market', {
+        const getAuctionList = await axios.get('http://localhost:3000/market', {
             headers: {
                 token: token
             }
         })
+        const {auctionList} = getAuctionList.data;
+
+        if (auctionList.length > 0) {
+            getRemainingAuctionTime(auctionList);
+            immediateOrderOrBid(recursiveAsyncReadLine, auctionList, token, errorHandler) // 검색 결과 나오면 1.즉시 구매 2.입찰 3.메뉴로 돌아가기 선택지 나옴
+        } else {
+            console.log('경매 진행 중인 물품이 없습니다.\n');
+            return errorHandler() // 에러는 아니지만 에러핸들러와 같은 로직이라 사용
+        }
+
     } catch (e) {
         console.log('경매 리스트 검색에 실패했습니다.', e)
         return errorHandler();
