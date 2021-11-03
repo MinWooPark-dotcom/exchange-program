@@ -240,6 +240,7 @@ const login = () => {
                 })
             } catch (e) {
                 console.log('로그인에 실패했습니다.', e);
+                errorHandler();
             }
         });
     });
